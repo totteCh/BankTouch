@@ -63,80 +63,103 @@ void touchIDFail(CFNotificationCenterRef center,
     }
 }
 
+
 %hook UIApplication
 
 - (id)init {
-    %log;
-    
     id original = %orig;
-    UIApplication *app = (UIApplication *)original;
     
     if ([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.apple.springboard"]) {
         return original;
     }
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        NSArray *windows = app.windows;
-        HBLogInfo(@"Windows in application:");
-        for (UIWindow *window in windows) {
-            HBLogDebug(@" · %@", window);
-        }
-        HBLogInfo(@"");
-        
-        if (windows.count == 0) return;
-        
-        UIWindow *mainWindow = [windows objectAtIndex:0];
-        
-        UIViewController *viewController = mainWindow.rootViewController;
-        
-        UIView *layoutContainerView = viewController.view;
-        
-        if (layoutContainerView.subviews.count == 0) return;
-        UIView *navigationTransitionView = [layoutContainerView.subviews objectAtIndex:0];
-        
-        if (navigationTransitionView.subviews.count == 0) return;
-        UIView *viewControllerWrapperView = [navigationTransitionView.subviews objectAtIndex:0];
-        
-        if (viewControllerWrapperView.subviews.count == 0) return;
-        UIView *authSignView = [viewControllerWrapperView.subviews objectAtIndex:0];
-        
-        if (authSignView.subviews.count == 0) return;
-        UIView *view = [authSignView.subviews objectAtIndex:5];
-        
-        if (view.subviews.count == 0) return;
-        codeTextField = [view.subviews objectAtIndex:0];
-        codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
-        codeTextField.layer.borderWidth = 1;
-        
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
-        
-        
-        UIView *keyboardWindow = [windows objectAtIndex:windows.count-1];
-        
-        if (keyboardWindow.subviews.count == 0) return;
-        UIView *inputContainerView = [keyboardWindow.subviews objectAtIndex:0];
-        
-        if (inputContainerView.subviews.count == 0) return;
-        UIView *inputHostView = [inputContainerView.subviews objectAtIndex:0];
-        
-        if (inputHostView.subviews.count < 1) return;
-        UIView *inputViewController = [inputHostView.subviews objectAtIndex:1];
-        
-        if (inputViewController.subviews.count < 4*3) return;
-        NSArray *buttons = inputViewController.subviews;
-        for (UIButton *button in buttons) {
-            if (button.tag >= 0) {
-                numberButtons[button.tag] = button;
-            } else if (button.tag == -2) {
-                submitButton = button;
-            }
-        }
-    });
+    [NSThread detachNewThreadSelector:@selector(waitForAuthView) toTarget:self withObject:nil];
     
     return original;
+}
+
+%new
+- (void)waitForAuthView {
+    NSArray *windows = self.windows;
+    
+    while (windows.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+        windows = self.windows;
+    }
+    
+    UIWindow *mainWindow = [windows objectAtIndex:0];
+    UIViewController *viewController = mainWindow.rootViewController;
+    UIView *layoutContainerView = viewController.view;
+    
+    while (layoutContainerView.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    UIView *navigationTransitionView = [layoutContainerView.subviews objectAtIndex:0];
+    
+    while (navigationTransitionView.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    UIView *viewControllerWrapperView = [navigationTransitionView.subviews objectAtIndex:0];
+    
+    while (viewControllerWrapperView.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    UIView *authSignView = [viewControllerWrapperView.subviews objectAtIndex:0];
+    
+    while (authSignView.subviews.count < 5) {
+        [NSThread sleepForTimeInterval:0.25];
+    }
+    UIView *view = [authSignView.subviews objectAtIndex:5];
+    
+    while (view.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    codeTextField = [view.subviews objectAtIndex:0];
+    
+    
+    UIView *keyboardWindow;
+    
+    while (YES) {
+        windows = self.windows;
+        keyboardWindow = [windows objectAtIndex:windows.count-1];
+        const char *className = class_getName([keyboardWindow class]);
+        NSString *classNameString = [NSString stringWithUTF8String:className];
+        if ([@"UIRemoteKeyboardWindow" isEqualToString:classNameString]) {
+            break;
+        }
+        [NSThread sleepForTimeInterval:0.2];
+    }
+    
+    while (keyboardWindow.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    UIView *inputContainerView = [keyboardWindow.subviews objectAtIndex:0];
+    
+    while (inputContainerView.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    UIView *inputHostView = [inputContainerView.subviews objectAtIndex:0];
+    
+    while (inputHostView.subviews.count < 1) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    UIView *inputViewController = [inputHostView.subviews objectAtIndex:1];
+    
+    while (inputViewController.subviews.count < 4*3) {
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    NSArray *buttons = inputViewController.subviews;
+    for (UIButton *button in buttons) {
+        if (button.tag >= 0) {
+            numberButtons[button.tag] = button;
+        } else if (button.tag == -2) {
+            submitButton = button;
+        }
+    }
+    
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
 }
 
 %end
