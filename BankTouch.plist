@@ -1,1 +1,8 @@
-{ Filter = { Bundles = ( "com.bankidapp.BankID" ); }; }
+{
+	Filter = {
+		Bundles = (
+			"com.apple.springboard",
+			"com.bankidapp.BankID",
+		);
+	};
+}

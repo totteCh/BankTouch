@@ -3,7 +3,8 @@ include $(THEOS)/makefiles/common.mk
 ARCHS = arm64
 
 TWEAK_NAME = BankTouch
-BankTouch_FILES = Tweak.xm
+BankTouch_FILES = Tweak.xm BioServer.mm
+BankTouch_PRIVATE_FRAMEWORKS = BiometricKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
