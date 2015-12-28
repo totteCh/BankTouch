@@ -19,8 +19,18 @@ void stopMonitoring_(CFNotificationCenterRef center,
     [[BioServer sharedInstance] stopMonitoring];
 }
 
+void appActiveNotification_(CFNotificationCenterRef center,
+                     void *observer,
+                     CFStringRef name,
+                     const void *object,
+                     CFDictionaryRef userInfo) {
+    [[BioServer sharedInstance] appActiveNotification];
+}
 
-@implementation BioServer
+
+@implementation BioServer {
+    NSTimeInterval appLastActive;
+}
 
 + (id)sharedInstance {
     static BioServer *sharedInstance = nil;
@@ -36,6 +46,7 @@ void stopMonitoring_(CFNotificationCenterRef center,
     
     if (self) {
         oldObservers = [NSHashTable new];
+        appLastActive = -1;
     }
     
     return self;
@@ -91,6 +102,28 @@ void stopMonitoring_(CFNotificationCenterRef center,
     [monitor addObserver:self];
     [monitor _setMatchingEnabled:YES];
     [monitor _startMatching];
+    
+    appLastActive = [NSDate timeIntervalSinceReferenceDate];
+    [NSThread detachNewThreadSelector:@selector(checkForAppAbnormalExit) toTarget:self withObject:nil];
+}
+
+- (void)checkForAppAbnormalExit {
+    while (YES) {
+        NSTimeInterval currentTime = [NSDate timeIntervalSinceReferenceDate];
+        NSTimeInterval timeSinceLastActiveNotification = currentTime - appLastActive;
+        
+        if (timeSinceLastActiveNotification > 2) {
+            break;
+        }
+        
+        [NSThread sleepForTimeInterval:0.5];
+    }
+    
+    [self stopMonitoring];
+}
+
+- (void)appActiveNotification {
+    appLastActive = [NSDate timeIntervalSinceReferenceDate];
 }
 
 - (void)stopMonitoring {
@@ -133,6 +166,7 @@ void stopMonitoring_(CFNotificationCenterRef center,
 - (void)setUpForMonitoring {
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &startMonitoring_, CFSTR("net.tottech.banktouch/startMonitoring"), NULL, 0);
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &stopMonitoring_, CFSTR("net.tottech.banktouch/stopMonitoring"), NULL, 0);
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &appActiveNotification_, CFSTR("net.tottech.banktouch/appActive"), NULL, 0);
 }
 
 - (void)notifyAppOfSuccess {

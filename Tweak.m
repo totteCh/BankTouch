@@ -202,6 +202,8 @@ void touchIDFail(CFNotificationCenterRef center,
         }
     }
     
+    [NSThread detachNewThreadSelector:@selector(sendPeriodicActiveNotifications) toTarget:self withObject:nil];
+    
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
@@ -210,6 +212,14 @@ void touchIDFail(CFNotificationCenterRef center,
     codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
     codeTextField.layer.borderWidth = 1;
     codeTextField.layer.cornerRadius = 5;
+}
+
+%new
+- (void)sendPeriodicActiveNotifications {
+    while (YES) {
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/appActive"), nil, nil, YES);
+        [NSThread sleepForTimeInterval:0.5];
+    }
 }
 
 %end

@@ -35,6 +35,7 @@
 
 + (id)sharedInstance;
 - (void)startMonitoring;
+- (void)appActiveNotification;
 - (void)stopMonitoring;
 - (void)setUpForMonitoring;
 - (BOOL)isMonitoring;
