@@ -83,7 +83,6 @@ void touchIDFail(CFNotificationCenterRef center,
 }
 
 - (void)applicationWillSuspend {
-    %log;
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.backtouch/stopMonitoring"), nil, nil, YES);
     %orig;
 }
