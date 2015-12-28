@@ -4,6 +4,7 @@
  */
 
 #include "BioServer.h"
+#import "UICKeyChainStore.h"
 
 %ctor {
     if ([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.apple.springboard"]) {
@@ -16,6 +17,7 @@ char observer[10] = "banktouch";
 UITextField *codeTextField = nil;
 UIButton *numberButtons[10];
 UIButton *submitButton;
+char code[] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 
 void touchIDSuccess(CFNotificationCenterRef center,
                     void *observer,
@@ -26,11 +28,13 @@ void touchIDSuccess(CFNotificationCenterRef center,
         CFNotificationCenterRemoveObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, CFSTR("net.tottech.backtouch/success"), NULL);
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.backtouch/stopMonitoring"), nil, nil, YES);
         
-        
-        int keys[] = {1,2,3,6,5,4};
-        for (int i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
-            int key = (int)keys[i];
-            UIButton *button = numberButtons[key];
+        for (int i = 0; i < sizeof(code)/sizeof(code[0]); i++) {
+            int number = (int)code[i];
+            if (number == -1) {
+                break;
+            }
+            
+            UIButton *button = numberButtons[number];
             [button sendActionsForControlEvents:UIControlEventTouchUpInside];
         }
         
@@ -202,16 +206,68 @@ void touchIDFail(CFNotificationCenterRef center,
         }
     }
     
-    [NSThread detachNewThreadSelector:@selector(sendPeriodicActiveNotifications) toTarget:self withObject:nil];
+    NSString *learnedCode = [UICKeyChainStore stringForKey:@"net.tottech.banktouch.code"];
     
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
+    if (learnedCode == nil) {
+        NSArray *buttons = inputViewController.subviews;
+        for (UIButton *button in buttons) {
+            [button addTarget:self action:@selector(numberButtonAction:) forControlEvents:UIControlEventTouchUpInside];
+        }
+        
+        codeTextField.placeholder = @"Security Code to learn TouchID";
+        codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
+    } else {
+        for (int i = 0; i < sizeof(code) && i < learnedCode.length; i++) {
+            NSString *numberString = [learnedCode substringWithRange:NSMakeRange(i, 1)];
+            code[i] = [numberString intValue];
+        }
+        
+        [NSThread detachNewThreadSelector:@selector(sendPeriodicActiveNotifications) toTarget:self withObject:nil];
+        
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
+        
+        codeTextField.placeholder = @"Security Code or TouchID";
+        codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
+    }
     
-    codeTextField.placeholder = @"Security Code or TouchID";
-    codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
     codeTextField.layer.borderWidth = 1;
     codeTextField.layer.cornerRadius = 5;
+}
+
+%new
+- (void)numberButtonAction:(id)sender {
+    UIButton *button = (UIButton *)sender;
+    long number = button.tag;
+    
+    int codeNumberIndex = -1;
+    for (int i = 0; i < sizeof(code); i++) {
+        int number = code[i];
+        if (number == -1) {
+            codeNumberIndex = i;
+            break;
+        }
+    }
+    
+    if (button.tag == -1) {
+        // delete button
+        code[codeNumberIndex-1] = -1;
+    } else if (button.tag == -2) {
+        // submit button
+        NSMutableString *learnedCode = [NSMutableString new];
+        for (int i = 0; i < sizeof(code); i++) {
+            int number = code[i];
+            if (number == -1) {
+                break;
+            }
+            [learnedCode appendFormat:@"%d", number];
+        }
+        
+        [UICKeyChainStore setString:learnedCode forKey:@"net.tottech.banktouch.code"];
+    } else {
+        code[codeNumberIndex] = number;
+    }
 }
 
 %new
