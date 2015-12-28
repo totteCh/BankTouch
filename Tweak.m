@@ -50,8 +50,8 @@ void touchIDFail(CFNotificationCenterRef center,
         [animation setDuration:0.05];
         [animation setRepeatCount:4];
         [animation setAutoreverses:YES];
-        [animation setFromValue:[NSValue valueWithCGPoint:CGPointMake(codeTextField.center.x, codeTextField.center.y - 10.0f)]];
-        [animation setToValue:[NSValue valueWithCGPoint:CGPointMake(codeTextField.center.x, codeTextField.center.y + 10.0f)]];
+        [animation setFromValue:[NSValue valueWithCGPoint:CGPointMake(codeTextField.center.x - 5, codeTextField.center.y)]];
+        [animation setToValue:[NSValue valueWithCGPoint:CGPointMake(codeTextField.center.x + 5, codeTextField.center.y)]];
         [codeTextField.layer addAnimation:animation forKey:@"position"];
         codeTextField.layer.borderColor = [UIColor redColor].CGColor;
         
