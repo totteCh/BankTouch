@@ -104,12 +104,48 @@ void touchIDFail(CFNotificationCenterRef center,
     while (viewControllerWrapperView.subviews.count == 0) {
         [NSThread sleepForTimeInterval:0.1];
     }
-    UIView *authSignView = [viewControllerWrapperView.subviews objectAtIndex:0];
+    
+    UIView *authSignView = nil;
+    
+    while (authSignView == nil) {
+        UIView *subview = [viewControllerWrapperView.subviews objectAtIndex:0];
+        const char *className = class_getName([subview class]);
+        NSString *classNameString = [NSString stringWithUTF8String:className];
+        if ([@"BIDAuthSignView" isEqualToString:classNameString]) {
+            authSignView = subview;
+            break;
+        }
+        
+        [NSThread sleepForTimeInterval:0.1];
+    }
     
     while (authSignView.subviews.count < 5) {
         [NSThread sleepForTimeInterval:0.25];
     }
-    UIView *view = [authSignView.subviews objectAtIndex:5];
+    
+    UIView *view = nil;
+    NSArray *authSignSubviews = nil;
+    
+    while (view == nil) {
+        authSignSubviews = authSignView.subviews;
+        
+        if (authSignSubviews.count < 5) {
+            [NSThread sleepForTimeInterval:0.1];
+            continue;
+        }
+        
+        UIView *subview = [authSignView.subviews objectAtIndex:5];
+        const char *className = class_getName([subview class]);
+        NSString *classNameString = [NSString stringWithUTF8String:className];
+        if ([@"UIView" isEqualToString:classNameString]) {
+            view = subview;
+            break;
+        }
+        
+        [NSThread sleepForTimeInterval:0.1];
+    }
+    
+    view = [authSignView.subviews objectAtIndex:5];
     
     while (view.subviews.count == 0) {
         [NSThread sleepForTimeInterval:0.1];
@@ -117,15 +153,18 @@ void touchIDFail(CFNotificationCenterRef center,
     codeTextField = [view.subviews objectAtIndex:0];
     
     
-    UIView *keyboardWindow;
+    UIView *keyboardWindow = nil;
     
-    while (YES) {
+    while (keyboardWindow == nil) {
         windows = self.windows;
-        keyboardWindow = [windows objectAtIndex:windows.count-1];
-        const char *className = class_getName([keyboardWindow class]);
-        NSString *classNameString = [NSString stringWithUTF8String:className];
-        if ([@"UIRemoteKeyboardWindow" isEqualToString:classNameString]) {
-            break;
+        
+        for (UIWindow *window in windows) {
+            const char *className = class_getName([window class]);
+            NSString *classNameString = [NSString stringWithUTF8String:className];
+            if ([@"UIRemoteKeyboardWindow" isEqualToString:classNameString]) {
+                keyboardWindow = window;
+                break;
+            }
         }
         [NSThread sleepForTimeInterval:0.2];
     }
