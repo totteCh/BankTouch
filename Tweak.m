@@ -78,6 +78,12 @@ void touchIDFail(CFNotificationCenterRef center,
     return original;
 }
 
+- (void)applicationWillSuspend {
+    %log;
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.backtouch/stopMonitoring"), nil, nil, YES);
+    %orig;
+}
+
 %new
 - (void)waitForAuthView {
     NSArray *windows = self.windows;
