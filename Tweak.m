@@ -6,6 +6,8 @@
 #include "BioServer.h"
 #import "UICKeyChainStore.h"
 
+#define kBundlePath @"/Library/Application Support/net.tottech.banktouch.bundle"
+
 %ctor {
     if ([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.apple.springboard"]) {
         [[BioServer sharedInstance] setUpForMonitoring];
@@ -67,6 +69,12 @@ void touchIDFail(CFNotificationCenterRef center,
 }
 
 
+@interface UIApplication (BankTouch)
+- (void)addTouchIDIndicatorOfSize:(CGSize)size toView:(UIView *)view;
+- (void)waitForAuthView;
+@end
+
+
 %hook UIApplication
 
 - (id)init {
@@ -92,48 +100,87 @@ void touchIDFail(CFNotificationCenterRef center,
 }
 
 %new
+- (void)addTouchIDIndicatorOfSize:(CGSize)size toView:(UIView *)view {
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        NSBundle *bundle = [[NSBundle alloc] initWithPath:kBundlePath];
+        NSString *imagePath = [bundle pathForResource:@"touchid-blue" ofType:@"png"];
+        
+        UIImageView *touchIDView = [[UIImageView alloc] init];
+        touchIDView.image = [UIImage imageWithContentsOfFile:imagePath];
+        
+        CGFloat containerWidth = view.frame.size.width;
+        CGFloat containerHeight = view.frame.size.height;
+        CGFloat x = containerWidth/2 - size.width/2;
+        CGFloat y = containerHeight/2 - size.height/2;
+        CGRect frame = CGRectMake(x, y, size.width, size.height);
+        touchIDView.frame = frame;
+        
+        [view addSubview:touchIDView];
+    });
+}
+
+%new
 - (void)waitForAuthView {
     NSArray *windows = self.windows;
     
     while (windows.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
         windows = self.windows;
     }
     
     UIWindow *mainWindow = [windows objectAtIndex:0];
-    UIViewController *viewController = mainWindow.rootViewController;
-    UIView *layoutContainerView = viewController.view;
+    UIViewController *viewController = nil;
+    
+    while (mainWindow.rootViewController == nil) {
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    viewController = mainWindow.rootViewController;
+    
+    UIView *layoutContainerView = nil;
+    
+    while (viewController.view == nil) {
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    
+    layoutContainerView = viewController.view;
     
     while (layoutContainerView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     UIView *navigationTransitionView = [layoutContainerView.subviews objectAtIndex:0];
     
     while (navigationTransitionView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     UIView *viewControllerWrapperView = [navigationTransitionView.subviews objectAtIndex:0];
     
     while (viewControllerWrapperView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     
+    UIView *mainView = nil;
     UIView *authSignView = nil;
+    BOOL ready = NO; // for some reason, null-checking both views does not work
     
-    while (authSignView == nil) {
+    while (!ready) {
         UIView *subview = [viewControllerWrapperView.subviews objectAtIndex:0];
         const char *className = class_getName([subview class]);
         NSString *classNameString = [NSString stringWithUTF8String:className];
-        if ([@"BIDAuthSignView" isEqualToString:classNameString]) {
+        
+        if ([@"BIDMainView" isEqualToString:classNameString]) {
+            mainView = subview;
+            [self addTouchIDIndicatorOfSize:CGSizeMake(50,50) toView:mainView];
+        } else if ([@"BIDAuthSignView" isEqualToString:classNameString]) {
             authSignView = subview;
+            ready = YES;
             break;
         }
         
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     
     while (authSignView.subviews.count < 5) {
-        [NSThread sleepForTimeInterval:0.25];
+        [NSThread sleepForTimeInterval:0.05];
     }
     
     UIView *view = nil;
@@ -142,28 +189,26 @@ void touchIDFail(CFNotificationCenterRef center,
     while (view == nil) {
         authSignSubviews = authSignView.subviews;
         
-        if (authSignSubviews.count < 5) {
-            [NSThread sleepForTimeInterval:0.1];
-            continue;
+        for (UIView *subview in authSignView.subviews) {
+            const char *className = class_getName([subview class]);
+            NSString *classNameString = [NSString stringWithUTF8String:className];
+            if ([@"UIView" isEqualToString:classNameString]) {
+                if (subview.subviews.count > 1) {
+                    UIView *subsubview = [subview.subviews objectAtIndex:0];
+                    className = class_getName([subsubview class]);
+                    classNameString = [NSString stringWithUTF8String:className];
+                    
+                    if ([@"UITextField" isEqualToString:classNameString]) {
+                        view = subview;
+                        codeTextField = (UITextField *)subsubview;
+                        break;
+                    }
+                }
+            }
         }
         
-        UIView *subview = [authSignView.subviews objectAtIndex:5];
-        const char *className = class_getName([subview class]);
-        NSString *classNameString = [NSString stringWithUTF8String:className];
-        if ([@"UIView" isEqualToString:classNameString]) {
-            view = subview;
-            break;
-        }
-        
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
-    
-    view = [authSignView.subviews objectAtIndex:5];
-    
-    while (view.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
-    }
-    codeTextField = [view.subviews objectAtIndex:0];
     
     
     UIView *keyboardWindow = nil;
@@ -179,21 +224,21 @@ void touchIDFail(CFNotificationCenterRef center,
                 break;
             }
         }
-        [NSThread sleepForTimeInterval:0.2];
+        [NSThread sleepForTimeInterval:0.1];
     }
     
     while (keyboardWindow.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     UIView *inputContainerView = [keyboardWindow.subviews objectAtIndex:0];
     
     while (inputContainerView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     UIView *inputHostView = [inputContainerView.subviews objectAtIndex:0];
     
     while (inputHostView.subviews.count < 1) {
-        [NSThread sleepForTimeInterval:0.1];
+        [NSThread sleepForTimeInterval:0.05];
     }
     UIView *inputViewController = [inputHostView.subviews objectAtIndex:1];
     
@@ -229,6 +274,19 @@ void touchIDFail(CFNotificationCenterRef center,
     }
     
     codeTextField.layer.cornerRadius = 5;
+    
+    
+    int textFieldWidth = codeTextField.frame.size.width;
+    int textFieldHeight = codeTextField.frame.size.height;
+    int smallIndicatorSize = textFieldHeight - 8;
+    int containerX = textFieldWidth - smallIndicatorSize - 4;
+    
+    UIView *smallIndicatorContainerView = [[UIView alloc] init];
+    CGRect containerFrame = CGRectMake(containerX, 4, smallIndicatorSize, smallIndicatorSize);
+    smallIndicatorContainerView.frame = containerFrame;
+    
+    [codeTextField addSubview:smallIndicatorContainerView];
+    [self addTouchIDIndicatorOfSize:CGSizeMake(smallIndicatorSize, smallIndicatorSize) toView:smallIndicatorContainerView];
 }
 
 %new
