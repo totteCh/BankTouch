@@ -256,9 +256,21 @@ void touchIDFail(CFNotificationCenterRef center,
     }
     
     NSString *learnedCode = [UICKeyChainStore stringForKey:@"net.tottech.banktouch.code"];
+    NSString *oldPlaceholder = codeTextField.placeholder;
+    NSString *appendedPlaceholder;
+    NSString *newPlaceholder;
+    
+    NSString *language = [[NSLocale preferredLanguages] objectAtIndex:0];
+    NSDictionary *languageComponents = [NSLocale componentsFromLocaleIdentifier:language];
+    NSString *languageCode = [languageComponents objectForKey:@"kCFLocaleLanguageCodeKey"];
+    
+    BOOL isEnglish = NO;
+    if ([languageCode isEqualToString:@"en"]) {
+        isEnglish = YES;
+    }
     
     if (learnedCode == nil) {
-        codeTextField.placeholder = @"Security Code to learn TouchID";
+        appendedPlaceholder = (isEnglish ? @"to learn TouchID" : @"för att lära TouchID");
         codeTextField.layer.borderColor = [UIColor orangeColor].CGColor;
         codeTextField.layer.borderWidth = 2;
     } else {
@@ -268,11 +280,13 @@ void touchIDFail(CFNotificationCenterRef center,
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
         
-        codeTextField.placeholder = @"Security Code or TouchID";
+        appendedPlaceholder = (isEnglish ? @"or TouchID" : @"eller TouchID");
         codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
         codeTextField.layer.borderWidth = 1;
     }
     
+    newPlaceholder = [oldPlaceholder stringByAppendingFormat:@" %@", appendedPlaceholder];
+    codeTextField.placeholder = newPlaceholder;
     codeTextField.layer.cornerRadius = 5;
     
     
