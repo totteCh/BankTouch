@@ -11,7 +11,7 @@
 
 
 char observer[10] = "banktouch";
-UITextField *codeTextField = nil;
+UITextField *codeTextField;
 UIButton *numberButtons[10];
 UIButton *submitButton;
 char code[] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
