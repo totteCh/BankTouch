@@ -3,7 +3,7 @@ Name: BankTouch
 Depends: mobilesubstrate
 Version: 0.0.1
 Architecture: iphoneos-arm
-Description: An awesome MobileSubstrate tweak!
+Description: Use TouchID for Swedish BankID app
 Maintainer: Christoffer Henriksson
 Author: Christoffer Henriksson
 Section: Tweaks
