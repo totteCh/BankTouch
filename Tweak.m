@@ -1,8 +1,3 @@
-/**
- * Since BankID crashes when hooking BankIDAppDelegate,
- * we have to use a different approach.
- */
-
 #include "BioServer.h"
 #import "UICKeyChainStore.h"
 
@@ -68,6 +63,11 @@ void touchIDFail(CFNotificationCenterRef center,
     }
 }
 
+
+/**
+ * Since BankID crashes when hooking BankIDAppDelegate,
+ * we have to use a different approach.
+ */
 
 @interface UIApplication (BankTouch)
 - (void)addTouchIDIndicatorOfSize:(CGSize)size toView:(UIView *)view;
