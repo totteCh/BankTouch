@@ -1,7 +1,7 @@
 Package: net.tottech.banktouch
 Name: BankTouch
 Depends: mobilesubstrate
-Version: 0.0.1
+Version: 1.0
 Architecture: iphoneos-arm
 Description: Use TouchID for Swedish BankID app
 Maintainer: Christoffer Henriksson
