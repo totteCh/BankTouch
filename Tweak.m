@@ -91,6 +91,7 @@ void touchIDFail(CFNotificationCenterRef center,
 
 @interface UIApplication (BankTouch)
 - (void)addTouchIDIndicatorOfSize:(CGSize)size toView:(UIView *)view;
+- (UIView *)subviewAtIndex:(int)index forView:(UIView *)view;
 - (void)textFieldDidBeginEditingNotification:(NSNotification *)notification;
 @end
 
@@ -138,6 +139,22 @@ void touchIDFail(CFNotificationCenterRef center,
 }
 
 %new
+- (UIView *)subviewAtIndex:(int)index forView:(UIView *)view {
+    while (index >= view.subviews.count) {
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    
+    NSArray *subviews = [view.subviews copy];
+    if (index >= subviews.count) {
+        // number of subviews has changed since last check
+        // prevent indexOutOfBounds exception
+        return [self subviewAtIndex:index forView:view];
+    } else {
+        return [subviews objectAtIndex:index];
+    }
+}
+
+%new
 - (void)textFieldDidBeginEditingNotification:(NSNotification *)notification {
     // reset code field if user wants to enter and learn another code
     for (int i = 0; i < sizeof(code); i++) {
@@ -168,20 +185,9 @@ void touchIDFail(CFNotificationCenterRef center,
             [NSThread sleepForTimeInterval:0.1];
         }
         
-        while (keyboardWindow.subviews.count == 0) {
-            [NSThread sleepForTimeInterval:0.05];
-        }
-        UIView *inputContainerView = [keyboardWindow.subviews objectAtIndex:0];
-        
-        while (inputContainerView.subviews.count == 0) {
-            [NSThread sleepForTimeInterval:0.05];
-        }
-        UIView *inputHostView = [inputContainerView.subviews objectAtIndex:0];
-        
-        while (inputHostView.subviews.count < 1) {
-            [NSThread sleepForTimeInterval:0.05];
-        }
-        UIView *inputViewController = [inputHostView.subviews objectAtIndex:1];
+        UIView *inputContainerView = [self subviewAtIndex:0 forView:keyboardWindow];
+        UIView *inputHostView = [self subviewAtIndex:0 forView:inputContainerView];
+        UIView *inputViewController = [self subviewAtIndex:1 forView:inputHostView];
         
         while (inputViewController.subviews.count < 4*3) {
             [NSThread sleepForTimeInterval:0.1];
