@@ -12,6 +12,7 @@
 
 char observer[10] = "banktouch";
 UITextField *codeTextField;
+BOOL touchIDSucceeded = NO;
 UIButton *numberButtons[10];
 UIButton *submitButton;
 char code[] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
@@ -25,6 +26,8 @@ void touchIDSuccess(CFNotificationCenterRef center,
         CFNotificationCenterRemoveObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, CFSTR("net.tottech.backtouch/success"), NULL);
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.backtouch/stopMonitoring"), nil, nil, YES);
         
+        touchIDSucceeded = YES;
+        
         NSString *learnedCode = [UICKeyChainStore stringForKey:@"net.tottech.banktouch.code"];
         for (int i = 0; i < learnedCode.length; i++) {
             NSString *numberString = [learnedCode substringWithRange:NSMakeRange(i, 1)];
@@ -36,6 +39,7 @@ void touchIDSuccess(CFNotificationCenterRef center,
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [submitButton sendActionsForControlEvents:UIControlEventTouchUpInside];
+            touchIDSucceeded = NO;
         });
     }
 }
@@ -305,6 +309,11 @@ void touchIDFail(CFNotificationCenterRef center,
 
 %new
 - (void)numberButtonAction:(id)sender {
+    if (touchIDSucceeded) {
+        // ignore
+        return;
+    }
+    
     UIButton *button = (UIButton *)sender;
     long number = button.tag;
     
