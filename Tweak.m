@@ -13,6 +13,8 @@
 char observer[10] = "banktouch";
 UITextField *codeTextField;
 BOOL touchIDSucceeded = NO;
+BOOL hasFoundKeyboard = NO;
+BOOL observingTouchID = NO;
 UIButton *numberButtons[10];
 UIButton *submitButton;
 char code[] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
@@ -22,7 +24,8 @@ void touchIDSuccess(CFNotificationCenterRef center,
                     CFStringRef name,
                     const void *object,
                     CFDictionaryRef userInfo) {
-    if (codeTextField != nil) {
+    if (codeTextField != nil && observingTouchID) {
+        observingTouchID = NO;
         CFNotificationCenterRemoveObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, CFSTR("net.tottech.backtouch/success"), NULL);
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.backtouch/stopMonitoring"), nil, nil, YES);
         
@@ -68,6 +71,19 @@ void touchIDFail(CFNotificationCenterRef center,
 }
 
 
+%hook UITextField
+
+- (void)setPlaceholder:(NSString *)placeholder {
+    %orig;
+    
+    if ([placeholder isEqualToString:@"Security Code"] || [placeholder isEqualToString:@"Säkerhetskod"]) {
+        codeTextField = self;
+    }
+}
+
+%end
+
+
 /**
  * Since BankID crashes when hooking BankIDAppDelegate,
  * we have to use a different approach.
@@ -75,7 +91,7 @@ void touchIDFail(CFNotificationCenterRef center,
 
 @interface UIApplication (BankTouch)
 - (void)addTouchIDIndicatorOfSize:(CGSize)size toView:(UIView *)view;
-- (void)waitForAuthView;
+- (void)textFieldDidBeginEditingNotification:(NSNotification *)notification;
 @end
 
 
@@ -90,10 +106,8 @@ void touchIDFail(CFNotificationCenterRef center,
     
     [[NSNotificationCenter defaultCenter]
      addObserver:self
-     selector:@selector(keyboardDidShowNotification:)
-     name:UIKeyboardDidShowNotification object:nil];
-    
-    [NSThread detachNewThreadSelector:@selector(waitForAuthView) toTarget:self withObject:nil];
+     selector:@selector(textFieldDidBeginEditingNotification:)
+     name:UITextFieldTextDidBeginEditingNotification object:nil];
     
     return original;
 }
@@ -124,145 +138,67 @@ void touchIDFail(CFNotificationCenterRef center,
 }
 
 %new
-- (void)waitForAuthView {
-    NSArray *windows = self.windows;
-    
-    while (windows.count == 0) {
-        [NSThread sleepForTimeInterval:0.05];
-        windows = self.windows;
+- (void)textFieldDidBeginEditingNotification:(NSNotification *)notification {
+    // reset code field if user wants to enter and learn another code
+    for (int i = 0; i < sizeof(code); i++) {
+        code[i] = -1;
     }
     
-    UIWindow *mainWindow = [windows objectAtIndex:0];
-    UIViewController *viewController = nil;
-    
-    while (mainWindow.rootViewController == nil) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    viewController = mainWindow.rootViewController;
-    
-    UIView *layoutContainerView = nil;
-    
-    while (viewController.view == nil) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    
-    layoutContainerView = viewController.view;
-    
-    while (layoutContainerView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    UIView *navigationTransitionView = [layoutContainerView.subviews objectAtIndex:0];
-    
-    while (navigationTransitionView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    UIView *viewControllerWrapperView = [navigationTransitionView.subviews objectAtIndex:0];
-    
-    while (viewControllerWrapperView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    
-    UIView *mainView = nil;
-    UIView *authSignView = nil;
-    BOOL ready = NO; // for some reason, null-checking both views does not work
-    
-    while (!ready) {
-        UIView *subview = [viewControllerWrapperView.subviews objectAtIndex:0];
-        const char *className = class_getName([subview class]);
-        NSString *classNameString = [NSString stringWithUTF8String:className];
+    [NSThread detachNewThreadSelector:@selector(prepareTouchID) toTarget:self withObject:nil];
+}
+
+%new
+- (void)prepareTouchID {
+    if (!hasFoundKeyboard) {
+        NSArray *windows;
+        UIView *keyboardWindow = nil;
         
-        if ([@"BIDMainView" isEqualToString:classNameString]) {
-            mainView = subview;
-            [self addTouchIDIndicatorOfSize:CGSizeMake(50,50) toView:mainView];
-        } else if ([@"BIDAuthSignView" isEqualToString:classNameString]) {
-            authSignView = subview;
-            ready = YES;
-            break;
-        }
-        
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    
-    while (authSignView.subviews.count < 5) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    
-    UIView *view = nil;
-    NSArray *authSignSubviews = nil;
-    
-    while (view == nil) {
-        authSignSubviews = authSignView.subviews;
-        
-        for (UIView *subview in authSignView.subviews) {
-            const char *className = class_getName([subview class]);
-            NSString *classNameString = [NSString stringWithUTF8String:className];
-            if ([@"UIView" isEqualToString:classNameString]) {
-                if (subview.subviews.count > 1) {
-                    UIView *subsubview = [subview.subviews objectAtIndex:0];
-                    className = class_getName([subsubview class]);
-                    classNameString = [NSString stringWithUTF8String:className];
-                    
-                    if ([@"UITextField" isEqualToString:classNameString]) {
-                        view = subview;
-                        codeTextField = (UITextField *)subsubview;
-                        break;
-                    }
+        while (keyboardWindow == nil) {
+            windows = self.windows;
+            
+            for (UIWindow *window in windows) {
+                const char *className = class_getName([window class]);
+                NSString *classNameString = [NSString stringWithUTF8String:className];
+                if ([@"UIRemoteKeyboardWindow" isEqualToString:classNameString]) {
+                    hasFoundKeyboard = YES;
+                    keyboardWindow = window;
+                    break;
                 }
             }
+            [NSThread sleepForTimeInterval:0.1];
         }
         
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    
-    
-    UIView *keyboardWindow = nil;
-    
-    while (keyboardWindow == nil) {
-        windows = self.windows;
+        while (keyboardWindow.subviews.count == 0) {
+            [NSThread sleepForTimeInterval:0.05];
+        }
+        UIView *inputContainerView = [keyboardWindow.subviews objectAtIndex:0];
         
-        for (UIWindow *window in windows) {
-            const char *className = class_getName([window class]);
-            NSString *classNameString = [NSString stringWithUTF8String:className];
-            if ([@"UIRemoteKeyboardWindow" isEqualToString:classNameString]) {
-                keyboardWindow = window;
-                break;
+        while (inputContainerView.subviews.count == 0) {
+            [NSThread sleepForTimeInterval:0.05];
+        }
+        UIView *inputHostView = [inputContainerView.subviews objectAtIndex:0];
+        
+        while (inputHostView.subviews.count < 1) {
+            [NSThread sleepForTimeInterval:0.05];
+        }
+        UIView *inputViewController = [inputHostView.subviews objectAtIndex:1];
+        
+        while (inputViewController.subviews.count < 4*3) {
+            [NSThread sleepForTimeInterval:0.1];
+        }
+        NSArray *buttons = inputViewController.subviews;
+        for (UIButton *button in buttons) {
+            if (button.tag >= 0) {
+                numberButtons[button.tag] = button;
+            } else if (button.tag == -2) {
+                submitButton = button;
             }
+            [button addTarget:self action:@selector(numberButtonAction:) forControlEvents:UIControlEventTouchUpInside];
         }
-        [NSThread sleepForTimeInterval:0.1];
-    }
-    
-    while (keyboardWindow.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    UIView *inputContainerView = [keyboardWindow.subviews objectAtIndex:0];
-    
-    while (inputContainerView.subviews.count == 0) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    UIView *inputHostView = [inputContainerView.subviews objectAtIndex:0];
-    
-    while (inputHostView.subviews.count < 1) {
-        [NSThread sleepForTimeInterval:0.05];
-    }
-    UIView *inputViewController = [inputHostView.subviews objectAtIndex:1];
-    
-    while (inputViewController.subviews.count < 4*3) {
-        [NSThread sleepForTimeInterval:0.1];
-    }
-    NSArray *buttons = inputViewController.subviews;
-    for (UIButton *button in buttons) {
-        if (button.tag >= 0) {
-            numberButtons[button.tag] = button;
-        } else if (button.tag == -2) {
-            submitButton = button;
-        }
-        [button addTarget:self action:@selector(numberButtonAction:) forControlEvents:UIControlEventTouchUpInside];
     }
     
     NSString *learnedCode = [UICKeyChainStore stringForKey:@"net.tottech.banktouch.code"];
     NSString *oldPlaceholder = codeTextField.placeholder;
-    NSString *appendedPlaceholder;
-    NSString *newPlaceholder;
     
     NSString *language = [[NSLocale preferredLanguages] objectAtIndex:0];
     NSDictionary *languageComponents = [NSLocale componentsFromLocaleIdentifier:language];
@@ -273,38 +209,50 @@ void touchIDFail(CFNotificationCenterRef center,
         isEnglish = YES;
     }
     
-    if (learnedCode == nil) {
-        appendedPlaceholder = (isEnglish ? @"to learn TouchID" : @"för att lära TouchID");
-        codeTextField.layer.borderColor = [UIColor orangeColor].CGColor;
-        codeTextField.layer.borderWidth = 2;
-    } else {
-        [NSThread detachNewThreadSelector:@selector(sendPeriodicActiveNotifications) toTarget:self withObject:nil];
-        
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
-        
-        appendedPlaceholder = (isEnglish ? @"or TouchID" : @"eller TouchID");
-        codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
-        codeTextField.layer.borderWidth = 1;
+    while (codeTextField == nil) {
+        [NSThread sleepForTimeInterval:0.01];
     }
     
-    newPlaceholder = [oldPlaceholder stringByAppendingFormat:@" %@", appendedPlaceholder];
-    codeTextField.placeholder = newPlaceholder;
-    codeTextField.layer.cornerRadius = 5;
-    
-    
-    int textFieldWidth = codeTextField.frame.size.width;
-    int textFieldHeight = codeTextField.frame.size.height;
-    int smallIndicatorSize = textFieldHeight - 8;
-    int containerX = textFieldWidth - smallIndicatorSize - 4;
-    
-    UIView *smallIndicatorContainerView = [[UIView alloc] init];
-    CGRect containerFrame = CGRectMake(containerX, 4, smallIndicatorSize, smallIndicatorSize);
-    smallIndicatorContainerView.frame = containerFrame;
-    
-    [codeTextField addSubview:smallIndicatorContainerView];
-    [self addTouchIDIndicatorOfSize:CGSizeMake(smallIndicatorSize, smallIndicatorSize) toView:smallIndicatorContainerView];
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        NSString *appendedPlaceholder;
+        NSString *newPlaceholder;
+        
+        if (learnedCode == nil) {
+            appendedPlaceholder = (isEnglish ? @"to learn TouchID" : @"för att lära TouchID");
+            codeTextField.layer.borderColor = [UIColor orangeColor].CGColor;
+            codeTextField.layer.borderWidth = 2;
+        } else {
+            if (!observingTouchID) {
+                observingTouchID = YES;
+                [NSThread detachNewThreadSelector:@selector(sendPeriodicActiveNotifications) toTarget:self withObject:nil];
+                
+                CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDSuccess, CFSTR("net.tottech.banktouch/success"), NULL, 0);
+                CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (void*)observer, &touchIDFail, CFSTR("net.tottech.banktouch/failure"), NULL, 0);
+                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("net.tottech.banktouch/startMonitoring"), nil, nil, YES);
+            }
+            
+            appendedPlaceholder = (isEnglish ? @"or TouchID" : @"eller TouchID");
+            codeTextField.layer.borderColor = [UIColor greenColor].CGColor;
+            codeTextField.layer.borderWidth = 1;
+        }
+        
+        newPlaceholder = [oldPlaceholder stringByAppendingFormat:@" %@", appendedPlaceholder];
+        codeTextField.placeholder = newPlaceholder;
+        codeTextField.layer.cornerRadius = 5;
+        
+        
+        int textFieldWidth = codeTextField.frame.size.width;
+        int textFieldHeight = codeTextField.frame.size.height;
+        int smallIndicatorSize = textFieldHeight - 8;
+        int containerX = textFieldWidth - smallIndicatorSize - 4;
+        
+        UIView *smallIndicatorContainerView = [[UIView alloc] init];
+        CGRect containerFrame = CGRectMake(containerX, 4, smallIndicatorSize, smallIndicatorSize);
+        smallIndicatorContainerView.frame = containerFrame;
+        
+        [codeTextField addSubview:smallIndicatorContainerView];
+        [self addTouchIDIndicatorOfSize:CGSizeMake(smallIndicatorSize, smallIndicatorSize) toView:smallIndicatorContainerView];
+    });
 }
 
 %new
@@ -340,17 +288,13 @@ void touchIDFail(CFNotificationCenterRef center,
             [learnedCode appendFormat:@"%d", number];
         }
         
+        if (learnedCode.length == 0) {
+            return;
+        }
+        
         [UICKeyChainStore setString:learnedCode forKey:@"net.tottech.banktouch.code"];
     } else {
         code[codeNumberIndex] = number;
-    }
-}
-
-%new
-- (void)keyboardDidShowNotification:(NSNotification *)notification {
-    // reset code field if user wants to enter and learn another code
-    for (int i = 0; i < sizeof(code); i++) {
-        code[i] = -1;
     }
 }
 
