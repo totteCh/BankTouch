@@ -110,6 +110,8 @@ void touchIDFail(CFNotificationCenterRef center,
      selector:@selector(textFieldDidBeginEditingNotification:)
      name:UITextFieldTextDidBeginEditingNotification object:nil];
     
+    [NSThread detachNewThreadSelector:@selector(addTouchIDIndicatorToAuthView) toTarget:self withObject:nil];
+    
     return original;
 }
 
@@ -259,6 +261,52 @@ void touchIDFail(CFNotificationCenterRef center,
         [codeTextField addSubview:smallIndicatorContainerView];
         [self addTouchIDIndicatorOfSize:CGSizeMake(smallIndicatorSize, smallIndicatorSize) toView:smallIndicatorContainerView];
     });
+}
+
+%new
+- (void)addTouchIDIndicatorToAuthView {
+    NSArray *windows = self.windows;
+    
+    while (windows.count == 0) {
+        [NSThread sleepForTimeInterval:0.05];
+        windows = self.windows;
+    }
+    
+    UIWindow *mainWindow = [windows objectAtIndex:0];
+    UIViewController *viewController = nil;
+    
+    while (mainWindow.rootViewController == nil) {
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    viewController = mainWindow.rootViewController;
+    
+    UIView *layoutContainerView = nil;
+    
+    while (viewController.view == nil) {
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    
+    layoutContainerView = viewController.view;
+    
+    UIView *navigationTransitionView = [self subviewAtIndex:0 forView:layoutContainerView];
+    UIView *viewControllerWrapperView = [self subviewAtIndex:0 forView:navigationTransitionView];
+    
+    while (viewControllerWrapperView.subviews.count == 0) {
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    
+    while (YES) {
+        UIView *subview = [viewControllerWrapperView.subviews objectAtIndex:0];
+        const char *className = class_getName([subview class]);
+        NSString *classNameString = [NSString stringWithUTF8String:className];
+        
+        if ([@"BIDMainView" isEqualToString:classNameString]) {
+            [self addTouchIDIndicatorOfSize:CGSizeMake(50,50) toView:subview];
+            break;
+        }
+        
+        [NSThread sleepForTimeInterval:0.05];
+    }
 }
 
 %new
