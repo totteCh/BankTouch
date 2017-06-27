@@ -1,29 +1,26 @@
 #include "BioServer.h"
+#import "Common.h"
 #import <CydiaSubstrate.h>
 #import <libactivator/libactivator.h>
 
 
-void startMonitoring_(CFNotificationCenterRef center,
-                      void *observer,
-                      CFStringRef name,
-                      const void *object,
-                      CFDictionaryRef userInfo) {
-    [[BioServer sharedInstance] startMonitoring];
+void startMonitoring_iOS9_(notificationArguments) {
+    [[BioServer sharedInstance] startMonitoring_iOS9];
 }
 
-void stopMonitoring_(CFNotificationCenterRef center,
-                     void *observer,
-                     CFStringRef name,
-                     const void *object,
-                     CFDictionaryRef userInfo) {
-    [[BioServer sharedInstance] stopMonitoring];
+void stopMonitoring_iOS9_(notificationArguments) {
+    [[BioServer sharedInstance] stopMonitoring_iOS9];
 }
 
-void appActiveNotification_(CFNotificationCenterRef center,
-                     void *observer,
-                     CFStringRef name,
-                     const void *object,
-                     CFDictionaryRef userInfo) {
+void startMonitoring_iOS10_(notificationArguments) {
+    [[BioServer sharedInstance] startMonitoring_iOS10];
+}
+
+void stopMonitoring_iOS10_(notificationArguments) {
+    [[BioServer sharedInstance] stopMonitoring_iOS10];
+}
+
+void appActiveNotification_(notificationArguments) {
     [[BioServer sharedInstance] appActiveNotification];
 }
 
@@ -43,40 +40,80 @@ void appActiveNotification_(CFNotificationCenterRef center,
 
 - (id)init {
     self = [super init];
-    
+
     if (self) {
-        oldObservers = [NSHashTable new];
+        if ([[[UIDevice currentDevice] systemVersion] doubleValue] < 10) {
+            oldObservers = [NSHashTable new];
+        }
         appLastActive = -1;
     }
-    
+
     return self;
 }
 
-
-- (void)biometricEventMonitor:(id)monitor handleBiometricEvent:(unsigned)event {
+// iOS 10 event handler
+- (void)biometricKitInterface:(id)interface handleEvent:(unsigned long long)event {
     switch (event) {
         case TouchIDMatched:
             [self notifyAppOfSuccess];
-            [self stopMonitoring];
+            [self stopMonitoring_iOS10];
             break;
-            
+
         case TouchIDNotMatched:
             [self notifyAppOfFailure];
             break;
-            
+
         default:
             break;
     }
 }
 
+// iOS 9 event handler
+- (void)biometricEventMonitor:(id)monitor handleBiometricEvent:(unsigned)event {
+    switch (event) {
+        case TouchIDMatched:
+            [self notifyAppOfSuccess];
+            [self stopMonitoring_iOS9];
+            break;
 
-- (void)startMonitoring {
+        case TouchIDNotMatched:
+            [self notifyAppOfFailure];
+            break;
+
+        default:
+            break;
+    }
+}
+
+- (void)startMonitoring_iOS10 {
     if (isMonitoring) {
         return;
     }
 
     isMonitoring = YES;
-    
+
+    // Do Activator stuff here...
+
+    _SBUIBiometricKitInterface *interface = [[objc_getClass("BiometricKit") manager] delegate];
+    _oldDelegate = interface.delegate;
+
+    // Begin listening
+    [interface setDelegate:self];
+    [interface matchWithMode:0 andCredentialSet:nil];
+
+    isMonitoring = YES;
+
+    appLastActive = [NSDate timeIntervalSinceReferenceDate];
+    [NSThread detachNewThreadSelector:@selector(checkForAppAbnormalExit) toTarget:self withObject:nil];
+}
+
+- (void)startMonitoring_iOS9 {
+    if (isMonitoring) {
+        return;
+    }
+
+    isMonitoring = YES;
+
     activatorListenerNames = nil;
     id activator = [objc_getClass("LAActivator") sharedInstance];
     if (activator != nil) {
@@ -90,19 +127,19 @@ void appActiveNotification_(CFNotificationCenterRef center,
             }
         }
     }
-    
+
     SBUIBiometricEventMonitor *monitor = [[objc_getClass("BiometricKit") manager] delegate];
     previousMatchingSetting = [monitor isMatchingEnabled];
     oldObservers = [MSHookIvar<NSHashTable *>(monitor, "_observers") copy];
-    
+
     for (id observer in oldObservers) {
         [monitor removeObserver:observer];
     }
-    
+
     [monitor addObserver:self];
     [monitor _setMatchingEnabled:YES];
     [monitor _startMatching];
-    
+
     appLastActive = [NSDate timeIntervalSinceReferenceDate];
     [NSThread detachNewThreadSelector:@selector(checkForAppAbnormalExit) toTarget:self withObject:nil];
 }
@@ -111,32 +148,50 @@ void appActiveNotification_(CFNotificationCenterRef center,
     while (YES) {
         NSTimeInterval currentTime = [NSDate timeIntervalSinceReferenceDate];
         NSTimeInterval timeSinceLastActiveNotification = currentTime - appLastActive;
-        
+
         if (timeSinceLastActiveNotification > 2) {
             break;
         }
-        
+
         [NSThread sleepForTimeInterval:0.5];
     }
-    
-    [self stopMonitoring];
+
+    [[[UIDevice currentDevice] systemVersion] doubleValue] < 10 ? [self stopMonitoring_iOS9] :
+                                                                  [self stopMonitoring_iOS10];
 }
 
 - (void)appActiveNotification {
     appLastActive = [NSDate timeIntervalSinceReferenceDate];
 }
 
-- (void)stopMonitoring {
+- (void)stopMonitoring_iOS10 {
     if (!isMonitoring) {
         return;
     }
-    
+
     isMonitoring = NO;
-    
+
+    _SBUIBiometricKitInterface *interface = [[objc_getClass("BiometricKit") manager] delegate];
+    [interface cancel];
+    [interface setDelegate:_oldDelegate];
+    [interface detectFingerWithOptions:nil];
+
+    _oldDelegate = nil;
+
+    // Do Activator stuff here...
+}
+
+- (void)stopMonitoring_iOS9 {
+    if (!isMonitoring) {
+        return;
+    }
+
+    isMonitoring = NO;
+
     SBUIBiometricEventMonitor *monitor = [[objc_getClass("BiometricKit") manager] delegate];
     NSHashTable *observers = MSHookIvar<NSHashTable *>(monitor, "_observers");
-    
-    
+
+
     if (observers != nil && [observers containsObject:self]) {
         [monitor removeObserver:self];
     }
@@ -145,11 +200,11 @@ void appActiveNotification_(CFNotificationCenterRef center,
             [monitor addObserver:observer];
         }
     }
-    
+
     oldObservers = nil;
-    
+
     [monitor _setMatchingEnabled:previousMatchingSetting];
-    
+
     id activator = [objc_getClass("LAActivator") sharedInstance];
     if (activator != nil && activatorListenerNames != nil) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void) {
@@ -164,8 +219,15 @@ void appActiveNotification_(CFNotificationCenterRef center,
 }
 
 - (void)setUpForMonitoring {
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &startMonitoring_, CFSTR("net.tottech.banktouch/startMonitoring"), NULL, 0);
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &stopMonitoring_, CFSTR("net.tottech.banktouch/stopMonitoring"), NULL, 0);
+    if ([[[UIDevice currentDevice] systemVersion] doubleValue] < 10) {
+        // iOS 9
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &startMonitoring_iOS9_, CFSTR("net.tottech.banktouch/startMonitoring"), NULL, 0);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &stopMonitoring_iOS9_, CFSTR("net.tottech.banktouch/stopMonitoring"), NULL, 0);
+    } else {
+        // iOS 10
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &startMonitoring_iOS10_, CFSTR("net.tottech.banktouch/startMonitoring"), NULL, 0);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &stopMonitoring_iOS10_, CFSTR("net.tottech.banktouch/stopMonitoring"), NULL, 0);
+    }
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &appActiveNotification_, CFSTR("net.tottech.banktouch/appActive"), NULL, 0);
 }
 
