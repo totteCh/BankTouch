@@ -85,6 +85,36 @@ void appActiveNotification_(notificationArguments) {
     }
 }
 
+- (void)removeActivatorListeners {
+    activatorListenerNames = nil;
+    id activator = [objc_getClass("LAActivator") sharedInstance];
+    if (activator != nil) {
+        id event = [objc_getClass("LAEvent") eventWithName:@"libactivator.fingerprint-sensor.press.single" mode:@"application"]; // LAEventNameFingerprintSensorPressSingle
+        if (event != nil) {
+            activatorListenerNames = [activator assignedListenerNamesForEvent:event];
+            if (activatorListenerNames != nil) {
+                for (NSString *listenerName in activatorListenerNames) {
+                    [activator removeListenerAssignment:listenerName fromEvent:event];
+                }
+            }
+        }
+    }
+}
+
+- (void)restoreActivatorListeners {
+    id activator = [objc_getClass("LAActivator") sharedInstance];
+    if (activator != nil && activatorListenerNames != nil) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void) {
+            id event = [objc_getClass("LAEvent") eventWithName:@"libactivator.fingerprint-sensor.press.single" mode:@"application"]; // LAEventNameFingerprintSensorPressSingle
+            if (event != nil) {
+                for (NSString *listenerName in activatorListenerNames) {
+                    [activator addListenerAssignment:listenerName toEvent:event];
+                }
+            }
+        });
+    }
+}
+
 - (void)startMonitoring_iOS10 {
     if (isMonitoring) {
         return;
@@ -92,7 +122,7 @@ void appActiveNotification_(notificationArguments) {
 
     isMonitoring = YES;
 
-    // Do Activator stuff here...
+    [self removeActivatorListeners];
 
     _SBUIBiometricKitInterface *interface = [[objc_getClass("BiometricKit") manager] delegate];
     _oldDelegate = interface.delegate;
@@ -114,19 +144,7 @@ void appActiveNotification_(notificationArguments) {
 
     isMonitoring = YES;
 
-    activatorListenerNames = nil;
-    id activator = [objc_getClass("LAActivator") sharedInstance];
-    if (activator != nil) {
-        id event = [objc_getClass("LAEvent") eventWithName:@"libactivator.fingerprint-sensor.press.single" mode:@"application"]; // LAEventNameFingerprintSensorPressSingle
-        if (event != nil) {
-            activatorListenerNames = [activator assignedListenerNamesForEvent:event];
-            if (activatorListenerNames != nil) {
-                for (NSString *listenerName in activatorListenerNames) {
-                    [activator removeListenerAssignment:listenerName fromEvent:event];
-                }
-            }
-        }
-    }
+    [self removeActivatorListeners];
 
     SBUIBiometricEventMonitor *monitor = [[objc_getClass("BiometricKit") manager] delegate];
     previousMatchingSetting = [monitor isMatchingEnabled];
@@ -178,7 +196,7 @@ void appActiveNotification_(notificationArguments) {
 
     _oldDelegate = nil;
 
-    // Do Activator stuff here...
+    [self restoreActivatorListeners];
 }
 
 - (void)stopMonitoring_iOS9 {
@@ -205,17 +223,7 @@ void appActiveNotification_(notificationArguments) {
 
     [monitor _setMatchingEnabled:previousMatchingSetting];
 
-    id activator = [objc_getClass("LAActivator") sharedInstance];
-    if (activator != nil && activatorListenerNames != nil) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void) {
-            id event = [objc_getClass("LAEvent") eventWithName:@"libactivator.fingerprint-sensor.press.single" mode:@"application"]; // LAEventNameFingerprintSensorPressSingle
-            if (event != nil) {
-                for (NSString *listenerName in activatorListenerNames) {
-                    [activator addListenerAssignment:listenerName toEvent:event];
-                }
-            }
-        });
-    }
+    [self restoreActivatorListeners];
 }
 
 - (void)setUpForMonitoring {
